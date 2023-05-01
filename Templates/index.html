@@ -48,7 +48,8 @@
             
             // get image from canvas
             const canvas = document.getElementById("image_canvas");
-            const imagePreview = canvas.toDataURL("image/png");
+            const imagePreview64 = canvas.toDataURL("image/jpeg", 0.75);
+            console.log(imagePreview64);
 
             console.log({ firstName, lastName, imagePreview});
 
