@@ -1,3 +1,5 @@
 /Register
 /Model
+.ipynb_checkpoints
+__pycache__
 code.ipynb
