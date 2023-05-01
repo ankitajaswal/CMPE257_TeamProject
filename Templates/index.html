@@ -20,6 +20,15 @@
         // on page loaded do this
         let activePage = 'Register';
         window.onload = function () {
+
+            // Disable the register button initially
+            document.getElementById("register_btn").disabled = true;
+            
+            // Add event listener to the capture button
+            document.getElementById("capture").addEventListener("click", function() {
+                document.getElementById("register_btn").disabled = false;
+            });
+
             document.getElementById("register_form").onsubmit = function () {
                 onSubmitRegister();
                 return false;
@@ -51,13 +60,13 @@
             const imagePreview64 = canvas.toDataURL("image/jpeg", 0.75);
             console.log(imagePreview64);
 
-            console.log({ firstName, lastName, imagePreview});
+            console.log({ firstName, lastName, imagePreview64});
 
             // create a FormData object to store the data and send it as a POST request to the Flask app
             const formData = new FormData();
             formData.append("firstName", firstName);
             formData.append("lastName", lastName);
-            formData.append("imagePreview", imagePreview);
+            formData.append("imagePreview", imagePreview64);
 
             fetch("/register", {
                 method: "POST",
@@ -121,7 +130,7 @@
                             class="bg-gray-100 border-2 w-full p-4 rounded-lg" value="">
                     </div>
                     <div>
-                        <button type="submit" class="bg-blue-500 text-white px-4 py-3 rounded font-medium w-full">Register User
+                        <button type="submit" class="bg-blue-500 text-white px-4 py-3 rounded font-medium w-full" id="register_btn" disabled>Register User
                         </button>
                     </div>
                 </form>

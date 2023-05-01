@@ -7,7 +7,6 @@ import mediapipe as mp
 import os
 import io
 import cv2
-from io import BytesIO
 from PIL import Image
 
 # Create application
@@ -40,7 +39,7 @@ def register():
 
     # print(first_name)
     # print(last_name)
-    # print(photo)
+    # print(photo_base64)
 
     IMAGES_PATH = "Register/original"
     CROPPED_IMAGES_PATH = "Register/cropped"
@@ -68,7 +67,6 @@ def register():
         os.makedirs(dirPath)
 
     # Save original image from the form to this path
-    #file = capture_photo(first_name=first_name, last_name=last_name, filepath=IMAGES_PATH)
     file = save_image_from_base64(photo_base64, os.path.join(dirPath, first_name + "_" + last_name + ".jpg"))
     if(file is None):
         print("[ERROR] Unable to capture from webcam... ")
