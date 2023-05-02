@@ -1,5 +1,8 @@
-/Register
-/Model
 .ipynb_checkpoints
 __pycache__
 code.ipynb
+clearfiles.sh
+dataset
+Model
+Register
+model

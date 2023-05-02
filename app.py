@@ -8,11 +8,26 @@ import os
 import io
 import cv2
 from PIL import Image
+from Model.SiameseModel import SiameseModel
+from tensorflow import keras
+
+# configured paths (change if needed)
+IMAGES_PATH = "Register/original"
+CROPPED_IMAGES_PATH = "Register/cropped"
+MODEL_PATH = "Model"#os.path.join("Model", "saved_model")
 
 # Create application
 app = Flask(__name__)
 
 def save_image_from_base64(base64_str, save_path):
+    """
+    Save base64 string to image file.
+    Args:  
+        base64_str (str): base64 string.
+        save_path (str): path to save image file.
+    Returns:
+        str: path to saved image file.
+    """
     # Decode base64 string to bytes
     img_bytes = base64.b64decode(base64_str.split(',')[1])
     img = Image.open(io.BytesIO(img_bytes)).convert('RGB')
@@ -21,6 +36,31 @@ def save_image_from_base64(base64_str, save_path):
     img.save(save_path, 'JPEG')
 
     return save_path
+
+
+def register_to_model(firstName, lastName, imagePath):
+    """
+    Register a person to the database.
+    Args:
+        firstName (str): first name of the person.
+        lastName (str): last name of the person.
+        imagePath (str): path to the person's photo.
+    Returns:
+        None
+    """
+
+    print("[INFO] Registering to the model...")
+    # Load the model
+    model = SiameseModel(network=keras.models.load_model(filepath=MODEL_PATH))
+
+    # Extract data from arguments
+    name = firstName + "_" + lastName
+    image = Image.open(imagePath)
+
+    # Register to the model
+    model.register(np.array(image), name)
+
+    print("[INFO] Done...")
 
 
 # Bind home function to URL
@@ -32,17 +72,33 @@ def home():
 @app.route('/register', methods=['POST'])
 
 def register():
+    """
+    Register a person to the database.
+    Args:
+        first_name (str): first name of the person.
+        last_name (str): last name of the person.
+        photo_base64 (str): base64 string of the person's photo.
+    Returns:
+        dict: contains the message, first name, last name, and photo filename.
+    """
     # get the first name, last name, and photo from the request
     first_name = request.form.get('firstName')
     last_name = request.form.get('lastName')
     photo_base64 = request.form.get('imagePreview')
 
+    if(first_name is None or last_name is None or photo_base64 is None):
+        print("[ERROR] Some/all of the parameters is None")
+        return jsonify({
+            'message': 'Photo processing unsuccessful',
+            'first_name': first_name,
+            'last_name': last_name,
+            'photo_filename': photo_base64
+        })
+
+    # debug
     # print(first_name)
     # print(last_name)
     # print(photo_base64)
-
-    IMAGES_PATH = "Register/original"
-    CROPPED_IMAGES_PATH = "Register/cropped"
 
     # Make sure the directories exist
     if not os.path.exists(IMAGES_PATH):
@@ -106,11 +162,13 @@ def register():
                     if cropped_image.size == 0:
                         continue
                     cv2.imwrite(facePath, cropped_image)
-        print("[INFO] Done... ")
+        print("[INFO] Done (img saved at " + facePath + ")... ")
     
     else:
         print("[INFO] Directory does not exist... cannot crop images")
 
+    # Register the person to the model
+    register_to_model(first_name, last_name, facePath)
 
     # return a JSON response with the results
     return jsonify({
@@ -119,6 +177,7 @@ def register():
         'last_name': last_name,
         'photo_filename': photo
     })
+
 
 if __name__ == '__main__':
     app.run(debug=True)
