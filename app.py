@@ -14,7 +14,7 @@ from tensorflow import keras
 # configured paths (change if needed)
 IMAGES_PATH = "Register/original"
 CROPPED_IMAGES_PATH = "Register/cropped"
-MODEL_PATH = "Model/"
+MODEL_PATH = "model/"
 
 # Create application
 app = Flask(__name__)
@@ -146,9 +146,8 @@ def register():
         # loop over the image paths
         for img_path in imagePaths:
             imageID = img_path.split(os.path.sep)[-1]
-            with mp_face_detection.FaceDetection(
-                min_detection_confidence=0.5) as face_detection:
 
+            with mp_face_detection.FaceDetection(min_detection_confidence=0.5) as face_detection:
                 image = cv2.imread(img_path)
                 results = face_detection.process(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
 
@@ -168,7 +167,7 @@ def register():
         print("[INFO] Directory does not exist... cannot crop images")
 
     # Register the person to the model
-    register_to_model(first_name, last_name, facePath)
+    #register_to_model(first_name, last_name, facePath)
 
     # return a JSON response with the results
     return jsonify({
