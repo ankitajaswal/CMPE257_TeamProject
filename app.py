@@ -8,13 +8,13 @@ import os
 import io
 import cv2
 from PIL import Image
-from Model.SiameseModel import SiameseModel
+from model.SiameseModel import SiameseModel
 from tensorflow import keras
 
 # configured paths (change if needed)
 IMAGES_PATH = "Register/original"
 CROPPED_IMAGES_PATH = "Register/cropped"
-MODEL_PATH = "Model"#os.path.join("Model", "saved_model")
+MODEL_PATH = "Model/"
 
 # Create application
 app = Flask(__name__)

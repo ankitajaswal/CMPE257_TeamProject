@@ -2,7 +2,8 @@
 __pycache__
 code.ipynb
 clearfiles.sh
-dataset
-Model
-Register
-model
+/dataset
+/Model
+/Register
+/model
+saved_model.zip
