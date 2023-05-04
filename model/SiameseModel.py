@@ -34,23 +34,25 @@ class SiameseModel(keras.Model):
         embedding_vector = self.network(image_tensor)
         self.registered_faces[label] = embedding_vector
 
-    def recognize_face(self, input_image, threshold=0.8, verbose=False):
+    def recognize_face(self, input_image, threshold=0.8, verbose=False, return_distance=False):
         # recognize face on input_image based on registered faces 
         # @input_image: normalized face image (as numpy array)
         # return: if distance <= threshold, return a label from database, otherwise "unknown"
         image_tensor = self._preprocess_numpy_image(input_image)
         input_vector = self.network(image_tensor)
         min_dist, min_name = 1000, self.unknown_name
-        for name, registered_vector in self.registered_faces.items():    
-            distance = self._calculate_distance(registered_vector, input_vector)
+        for name, registered_vector in self.registered_faces.items():
+            distance = self._calculate_distance(registered_vector, input_vector)[0]
             if verbose:
                 print(f"dist:{distance}, name:{name}")
             if distance <= min_dist:
                 min_dist = distance
                 min_name = name
         min_name = min_name if min_dist <= threshold else self.unknown_name
-        print(f"prediction: {min_name}")
-        return min_name
+        if return_distance:
+            return min_name, min_dist
+        else:
+            return min_name
 
     # ---------------------------------------------
 

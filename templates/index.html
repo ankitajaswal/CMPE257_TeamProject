@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Face Recognition System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        clifford: '#336699',
+                    }
+                }
+            }
+        }
+    </script>
+    <script>
+        // on page loaded do this
+        let activePage = 'Register';
+        window.onload = function () {
+
+            // Disable the register button initially
+            document.getElementById("register_btn").disabled = true;
+            
+            // Add event listener to the capture button
+            document.getElementById("capture").addEventListener("click", function() {
+                document.getElementById("register_btn").disabled = false;
+            });
+
+            document.getElementById("register_form").onsubmit = function () {
+                onSubmitRegister();
+                return false;
+            };
+        };
+    </script>
+    <script>
+        function changeActivePage(page) {
+            activePage = page;
+            if (activePage === 'Register') {
+                document.getElementById("predict_page").classList.add("hidden");
+                document.getElementById("register_page").classList.remove("hidden");
+                document.getElementById("register_link").classList.add("bg-blue-800");
+                document.getElementById("predict_link").classList.remove("bg-blue-800");
+            } else if (activePage === 'Predict') {
+                document.getElementById("register_page").classList.add("hidden");
+                document.getElementById("predict_page").classList.remove("hidden");
+                document.getElementById("predict_link").classList.add("bg-blue-800");
+                document.getElementById("register_link").classList.remove("bg-blue-800");
+            }
+        }
+
+        function onSubmitRegister() {
+            const firstName = document.getElementById("first_name").value;
+            const lastName = document.getElementById("last_name").value;
+            const imagePreview64 = canvas.toDataURL("image/jpeg", 0.75);
+
+            console.log({ firstName, lastName });
+
+            // create a FormData object to store the data and send it as a POST request to the Flask app
+            const formData = new FormData();
+            formData.append("firstName", firstName);
+            formData.append("lastName", lastName);
+            formData.append("imagePreview", imagePreview64);
+            fetch("/register", {
+                method: "POST",
+                body: formData
+            })
+            .then(response => {
+                console.log(response);
+                // do something with the response
+            })
+            .catch(error => {
+                console.error(error);
+            });
+
+            // clear the form
+            document.getElementById("first_name").value = '';
+            document.getElementById("last_name").value = '';
+            document.getElementById("image_canvas").getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+        }
+    </script>
+
+</head>
+
+<body>
+    <!--Tailwind Navbar with home and about links-->
+    <nav class="bg-blue-500 shadow">
+        <div class="container mx-auto flex justify-between">
+            <div class="flex">
+                <a href="index.html" class="flex items-center py-4 px-2 text-white">
+                    <span class="font-bold text-xl">Face Recognition System</span>
+                </a>
+            </div>
+            <div class="flex">
+                <a href="#" id="register_link"
+                    class="inline-flex items-center py-3 px-3 my-6 rounded text-white text-xl bg-blue-800 hover:bg-blue-800 mx-2"
+                    onclick="changeActivePage('Register')">
+                    Register New User
+
+                </a>
+                <a href="#" id="predict_link"
+                    class="inline-flex items-center py-3 px-3 my-6 rounded text-white text-xl hover:bg-blue-800 mx-2"
+                    onclick="changeActivePage('Predict')">
+                    Predict
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!--Form with First Name, Last Name, Photo -->
+    <div class="container mx-auto mt-20" id="register_page">
+        <div class="flex justify-center">
+            <div class="w-1/2 bg-white p-6 rounded-lg">
+                <form action="{{url_for('register')}}" method="POST" id="register_form">
+                    <div class="mb-4">
+                        <label for="first_name" class="sr-only">First Name</label>
+                        <input type="text" name="first_name" id="first_name" placeholder="First Name"
+                            class="bg-gray-100 border-2 w-full p-4 rounded-lg" value="">
+                    </div>
+                    <div class="mb-4">
+                        <label for="last_name" class="sr-only">Last Name</label>
+                        <input type="text" name="last_name" id="last_name" placeholder="Last Name"
+                            class="bg-gray-100 border-2 w-full p-4 rounded-lg" value="">
+                    </div>
+                    <div> 
+                        <button type="submit" class="bg-blue-500 text-white px-4 py-3 rounded font-medium w-full" id="register_btn" disabled>Register User (Capture Image first)
+                        </button>
+                    </div>
+                </form>
+            </div>
+            <div class="w-1/2 bg-white p-6 rounded-lg flex flex-col">
+                <!-- Open webcam and capture photo and display preview -->
+                <!-- <video id="player" controls autoplay width="300px" height="300px" class="mx-auto"></video> -->
+                <img src="{{ url_for('raw') }}" width="300px" height="300px" class="mx-auto">
+                <button id="capture"
+                    class="bg-blue-500 text-white px-4 py-3 rounded font-medium w-[16rem] mt-16 text-center mx-auto">
+                    Capture
+                </button>
+                <canvas id="image_canvas" width="320px" height="200px"
+                    class="w-[320px] h-[320px] mx-auto mt-16"></canvas>
+            </div>
+        </div>
+    </div>
+    <!--Form for predictions -->
+    <div id="predict_page" class="hidden container mx-auto mt-20">
+        <div class="flex justify-center">
+            <div class="w-1/2 bg-white p-6 rounded-lg">
+            </div>
+            <div class="w-1/2 bg-white p-6 rounded-lg flex flex-col">
+                <img src="{{ url_for('output') }}">
+            </div>
+        </div>
+    </div>
+    <script>
+        // const player = document.getElementById('player');
+        const canvas = document.getElementById('image_canvas');
+        const context = canvas.getContext('2d');
+        const captureButton = document.getElementById('capture');
+
+        const constraints = {
+            video: true,
+        };
+        var image = new Image();
+        image.onload = function() {
+            var hRatio = canvas.width / image.width    ;
+            var vRatio = canvas.height / image.height  ;
+            var ratio  = Math.min ( hRatio, vRatio );
+            context.drawImage(image, 0,0, image.width, image.height, 0,0,image.width*ratio, image.height*ratio);
+        }
+        captureButton.addEventListener('click', async () => {
+            console.log("sending POST request '/capture'");   
+            const response = await fetch("/capture", {
+                method: "POST",
+                body: new FormData()
+            })
+            const data = await response.json()
+            // console.log(data.imageBase64);
+            if (data.imageBase64) {
+                image.src = 'data:image/png;base64,' + data.imageBase64;
+                // context.drawImage(image, 0, 0, canvas.width, canvas.height);
+                // console.log("image drawn to canvas"); 
+            }
+        });
+
+        // Attach the video stream to the video element and autoplay.
+        // navigator.mediaDevices.getUserMedia(constraints).then((stream) => {
+        //     player.srcObject = stream;
+        // });
+    </script>
+
+    <!-- Add a footer section -->
+    <footer class="bg-gray-200 text-center text-xs p-3 absolute bottom-0 w-full">
+        <p class="text-gray-500">
+            Face Recognition System. Project for CMPE 257.
+        </p>
+        <!-- Put links for github repo -->
+        <div class="flex items-center justify-center mt-3">
+            <a href="https://github.com/ankitajaswal/CMPE257_TeamProject">Link to Github repo</a>
+    </footer>
+</body>
+
+</html>

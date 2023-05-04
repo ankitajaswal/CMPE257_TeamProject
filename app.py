@@ -1,183 +1,223 @@
 import numpy as np
 import pickle
 import base64
-from flask import Flask, request, render_template, jsonify
+from flask import Flask, request, render_template, jsonify, Response
 from imutils.paths import list_images
+from imutils.video import VideoStream
 import mediapipe as mp
 import os
 import io
+import time
+import signal
+import threading
 import cv2
 from PIL import Image
 from model.SiameseModel import SiameseModel
 from tensorflow import keras
 
 # configured paths (change if needed)
-IMAGES_PATH = "Register/original"
-CROPPED_IMAGES_PATH = "Register/cropped"
-MODEL_PATH = "Model/"
+MODEL_PATH = "model/saved_model"
 
-# Create application
+# create application
 app = Flask(__name__)
+outputFrame = None
+lock = threading.Lock()
+# define video frames
+raw_video_frame = None
+output_video_frame = None
+video_active = True
 
-def save_image_from_base64(base64_str, save_path):
-    """
-    Save base64 string to image file.
-    Args:  
-        base64_str (str): base64 string.
-        save_path (str): path to save image file.
-    Returns:
-        str: path to saved image file.
-    """
-    # Decode base64 string to bytes
-    img_bytes = base64.b64decode(base64_str.split(',')[1])
-    img = Image.open(io.BytesIO(img_bytes)).convert('RGB')
+vs = VideoStream(src=0).start()
+time.sleep(2.0)
+# define siamese model & mediapipe face detection
+siamese_model = SiameseModel(network=keras.models.load_model(filepath=MODEL_PATH))
+face_detection = mp.solutions.face_detection.FaceDetection(min_detection_confidence=0.5)
 
-    # save the image to disk
-    img.save(save_path, 'JPEG')
+# add signal handler to handle server shutdown
+# def shutdown_handler(signum, frame):
+#     global video_active
+#     video_active = False    
 
-    return save_path
+# signal.signal(signal.SIGINT, shutdown_handler)
 
+# create frame generators for streaming video to browser
+def gen_raw_frame():  # generate raw frame
+    global raw_video_frame
+    while True:
+        if raw_video_frame is None:
+            continue
+        
+        ret, buffer = cv2.imencode('.jpg', raw_video_frame)
 
-def register_to_model(firstName, lastName, imagePath):
-    """
-    Register a person to the database.
-    Args:
-        firstName (str): first name of the person.
-        lastName (str): last name of the person.
-        imagePath (str): path to the person's photo.
-    Returns:
-        None
-    """
-
-    print("[INFO] Registering to the model...")
-    # Load the model
-    model = SiameseModel(network=keras.models.load_model(filepath=MODEL_PATH))
-
-    # Extract data from arguments
-    name = firstName + "_" + lastName
-    image = Image.open(imagePath)
-
-    # Register to the model
-    model.register(np.array(image), name)
-
-    print("[INFO] Done...")
+        if not ret:
+            continue
+        
+        # yield the output frame in the byte format
+        yield(b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' + 
+            bytearray(buffer) + b'\r\n')
 
 
-# Bind home function to URL
+def gen_output_frame():  # generate raw frame
+    global output_video_frame
+    while True:
+        if output_video_frame is None:
+            continue
+        
+        ret, buffer = cv2.imencode('.jpg', output_video_frame)
+
+        if not ret:
+            continue
+        
+        # yield the output frame in the byte format
+        yield(b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' + 
+            bytearray(buffer) + b'\r\n')
+
+
+def encode_cvimage_base64(cv_image):
+    _, im_arr = cv2.imencode('.jpg', cv_image)
+    im_bytes = im_arr.tobytes()
+    im_b64 = base64.b64encode(im_bytes)
+    return im_b64    
+
+def decode_cvimage_base64(base64Str):
+    im_bytes = base64.b64decode(base64Str.split(',')[1])
+    im_arr = np.frombuffer(im_bytes, dtype=np.uint8)  # im_arr is one-dim Numpy array
+    cv_image = cv2.imdecode(im_arr, flags=cv2.IMREAD_COLOR)
+    return cv_image
+
+
+# bind home function to URL
 @app.route('/')
 def home():
     return render_template('index.html')
 
-# Bind predict function to URL
-@app.route('/register', methods=['POST'])
+# expose endpoint for raw video
+@app.route('/raw')
+def raw():
+    return Response(gen_raw_frame(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
+# expose endpoint for output video
+@app.route('/output')
+def output():
+    return Response(gen_output_frame(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+# bind predict function to URL
+@app.route('/capture', methods=['POST'])    
+def capture():
+    global raw_video_frame
+    if raw_video_frame is not None:            
+        print("[SUCCESS] Photo captured")
+        image_base64 = encode_cvimage_base64(raw_video_frame)
+        return jsonify({
+            'message': 'success: photo captured',
+            'imageBase64': image_base64.decode('utf8')
+        })
+    else:
+        print("[ERROR] Could not get frame from webcam")
+        return jsonify({
+            'message': 'error: could not get frame from webcam',
+        })
+
+# bind predict function to URL
+@app.route('/register', methods=['POST'])
 def register():
+    global raw_video_frame, face_detection, siamese_model, lock
     """
     Register a person to the database.
     Args:
         first_name (str): first name of the person.
         last_name (str): last name of the person.
-        photo_base64 (str): base64 string of the person's photo.
+        image_base64 (str): image data in base64
     Returns:
         dict: contains the message, first name, last name, and photo filename.
     """
-    # get the first name, last name, and photo from the request
+    # get the first name, last name from the request
     first_name = request.form.get('firstName')
     last_name = request.form.get('lastName')
-    photo_base64 = request.form.get('imagePreview')
+    image_base64 = request.form.get('imagePreview')
 
-    if(first_name is None or last_name is None or photo_base64 is None):
+    #print(f"first_name: {first_name}, last_name: {last_name}, image : {image}")
+
+    if (first_name is None or last_name is None or image_base64 is None):
         print("[ERROR] Some/all of the parameters is None")
         return jsonify({
-            'message': 'Photo processing unsuccessful',
-            'first_name': first_name,
-            'last_name': last_name,
-            'photo_filename': photo_base64
+            'message': 'error: incomplete input form',
         })
-
-    # debug
-    # print(first_name)
-    # print(last_name)
-    # print(photo_base64)
-
-    # Make sure the directories exist
-    if not os.path.exists(IMAGES_PATH):
-        os.makedirs(IMAGES_PATH)
-
-    if not os.path.exists(CROPPED_IMAGES_PATH):
-        os.makedirs(CROPPED_IMAGES_PATH)
-
-    # do some processing on the photo (save it to disk)
-    mp_face_detection = mp.solutions.face_detection
-
-    print("[INFO] Cropping the images and saving them...")
-
-    # Create a folder with the person's name and thje original image in it
-    name = first_name + "_" + last_name
-    dirPath = os.path.join(IMAGES_PATH, name)
-    print("Working on " + dirPath)
-    print(dirPath)
-    
-    if not os.path.exists(dirPath):
-        print("[INFO] Path does not exist, creating...")
-        os.makedirs(dirPath)
-
-    # Save original image from the form to this path
-    file = save_image_from_base64(photo_base64, os.path.join(dirPath, first_name + "_" + last_name + ".jpg"))
-    if(file is None):
-        print("[ERROR] Unable to capture from webcam... ")
-        return jsonify({
-            'message': 'Photo processing unsuccessful',
-            'first_name': first_name,
-            'last_name': last_name,
-            'photo_filename': file
-        })
-    
-    # Load file from 'file' variable
-    photo = file
-
-    if os.path.isdir(dirPath):
-        imagePaths = list(list_images(dirPath))
-        outputDir = os.path.join(CROPPED_IMAGES_PATH, name)
-
-        if not os.path.exists(outputDir):
-            os.makedirs(outputDir)
-
-        # loop over the image paths
-        for img_path in imagePaths:
-            imageID = img_path.split(os.path.sep)[-1]
-            with mp_face_detection.FaceDetection(
-                min_detection_confidence=0.5) as face_detection:
-
-                image = cv2.imread(img_path)
-                results = face_detection.process(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-
-                for i, detection in enumerate(results.detections):
-                    x1, y1 = int(detection.location_data.relative_bounding_box.xmin * image.shape[1]), int(detection.location_data.relative_bounding_box.ymin * image.shape[0])
-                    x2, y2 = int((detection.location_data.relative_bounding_box.xmin + detection.location_data.relative_bounding_box.width) * image.shape[1]), int((detection.location_data.relative_bounding_box.ymin + detection.location_data.relative_bounding_box.height) * image.shape[0])
-                    cropped_image = image[y1:y2, x1:x2]
-                    facePath = os.path.sep.join([outputDir, imageID])
-
-                    # Check for empty images
-                    if cropped_image.size == 0:
-                        continue
-                    cv2.imwrite(facePath, cropped_image)
-        print("[INFO] Done (img saved at " + facePath + ")... ")
-    
     else:
-        print("[INFO] Directory does not exist... cannot crop images")
+        image = decode_cvimage_base64(image_base64)
+        name = f"{first_name}_{last_name}"
+        rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB) 
 
-    # Register the person to the model
-    register_to_model(first_name, last_name, facePath)
+        # extract faces
+        results = face_detection.process(rgb_image)
 
-    # return a JSON response with the results
-    return jsonify({
-        'message': 'Photo processing successful',
-        'first_name': first_name,
-        'last_name': last_name,
-        'photo_filename': photo
-    })
+        if (len(results.detections) > 0):
+            bbox = results.detections[0].location_data.relative_bounding_box
+            x1, y1 = int(bbox.xmin * rgb_image.shape[1]), int(bbox.ymin * rgb_image.shape[0])
+            x2, y2 = int((bbox.xmin + bbox.width) * rgb_image.shape[1]), int((bbox.ymin + bbox.height) * rgb_image.shape[0])
+            cropped_face = rgb_image[y1:y2, x1:x2]
+            with lock:
+                siamese_model.register(cropped_face, name)        
+            print(f"[INFO] New face registered ({name})")
+            return jsonify({
+                'message': 'success: new face added to model',
+            })
+        else:
+            print("[ERROR] No face detected")
+            return jsonify({
+                'message': 'error: no face detected',
+            })
 
 
+def get_frame_from_webcam():
+    global vs, raw_video_frame
+
+    while True:        
+        frame = vs.read()
+        if frame is not None:
+            raw_video_frame = frame.copy()
+
+
+def perform_face_recognition():
+    global vs, raw_video_frame, output_video_frame, face_detection, siamese_model, lock
+
+    while True:        
+        if raw_video_frame is None:
+            continue
+        cv_image = raw_video_frame.copy()
+        rgb_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
+        results = face_detection.process(rgb_image)
+        if (results.detections is None):
+            continue
+        for detection in results.detections:
+            bbox = detection.location_data.relative_bounding_box
+            x1, y1 = int(bbox.xmin * rgb_image.shape[1]), int(bbox.ymin * rgb_image.shape[0])
+            x2, y2 = int((bbox.xmin + bbox.width) * rgb_image.shape[1]), int((bbox.ymin + bbox.height) * rgb_image.shape[0])
+            cv2.rectangle(cv_image, (x1, y1), (x2, y2), (255,0,0), 2)
+            cropped_face = rgb_image[y1:y2, x1:x2]
+            if cropped_face.size == 0:
+                continue
+            if siamese_model.registered_faces.keys:
+                with lock:
+                    detected_name, distance = siamese_model.recognize_face(cropped_face, return_distance=True)
+                    cv2.putText(cv_image, f"{detected_name} ({distance:.3f})", (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255,0,0), 2)
+        output_video_frame = cv_image.copy()
+
+    
 if __name__ == '__main__':
-    app.run(debug=True)
+
+    # start
+    webcam_thread = threading.Thread(target=get_frame_from_webcam)
+    webcam_thread.daemon = True
+    webcam_thread.start()
+
+    face_recognition_thread = threading.Thread(target=perform_face_recognition)
+    face_recognition_thread.daemon = True
+    face_recognition_thread.start()
+
+    # start server
+    app.run(debug=True, threaded=True, use_reloader=False)
+
+vs.stop()
+
+    
